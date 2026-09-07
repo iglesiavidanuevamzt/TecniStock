@@ -2,7 +2,7 @@ import { AppError } from "./errors";
 import { GROQ_CHAT_URL, claveApiGroq, parseJsonObject } from "./groq";
 import { GROQ_CHAT_TIMEOUT_MS, fetchTimeout, isTimeoutError } from "./edge";
 import { compactarTextoAsesor, mexicanizarMostrador, PROMPT_ANALISIS_VISUAL, USER_PROMPT_ANALISIS_VISUAL, MENSAJE_FUERA_DE_GIRO } from "../ia/prompts";
-import { nombreMostradorCompuesto } from "./inventario-local";
+import { esPiezaVozDatos, nombreMostradorCompuesto } from "./inventario-local";
 
 /**
  * Groq dio de baja llama-3.2-11b-vision-preview (2025-04-14).
@@ -44,6 +44,8 @@ export type ImagenAnalizar = {
 
 export type PiezaDetectada = {
   nombre: string;
+  producto_venta: string;
+  accesorios_visibles: string;
   material: string;
   medida: string;
   categoria: string;
@@ -221,29 +223,45 @@ function normalizarPieza(raw: Record<string, unknown>): PiezaDetectada {
   const extras = [raw.rosca, raw.mecanismo, raw.acabado, raw.marca]
     .map((item) => texto(item))
     .filter((item) => item && item.split(/\s+/).length <= 2);
+  const productoVenta = mexicanizarMostrador(texto(raw.producto_venta || raw.objeto_venta || raw.busqueda));
+  const accesoriosVisibles = mexicanizarMostrador(texto(raw.accesorios_visibles || raw.accesorios));
   const clavesModelo = palabrasClave(raw.palabras_clave);
   const mecanismo = mexicanizarMostrador(texto(raw.mecanismo));
   const nombreMx = mexicanizarMostrador(nombre);
   const descripcionMx = mexicanizarMostrador(descripcion);
+  const identidadCruda = `${nombreMx} ${productoVenta} ${descripcionMx} ${mecanismo} ${clavesModelo.join(" ")}`;
+  const vozDatos = esPiezaVozDatos(identidadCruda);
+  const clavesBusqueda = vozDatos
+    ? clavesModelo.filter((item) => !/^(cable|ethernet|patch|latiguillo|utp)$/i.test(item))
+    : clavesModelo;
   const palabras_clave = entidadesSueltas(
-    clavesModelo.length ? [...clavesModelo, ...extras] : [nombre, ...extras]
+    clavesBusqueda.length
+      ? [...clavesBusqueda, productoVenta, ...extras]
+      : [productoVenta || nombre, ...extras]
   );
-  const nombreFinal = nombreMostradorCompuesto({
-    nombre: nombreMx,
-    material: texto(raw.material) || "No determinado",
-    medida: mexicanizarMostrador(texto(raw.medida || raw.medida_detectada) || "No visible"),
-    descripcion: descripcionMx,
-    mecanismo,
-    palabras_clave,
-  });
-  if (/^apagador\b/i.test(nombreFinal) && !palabras_clave.some((item) => /^apagador$/i.test(item))) {
+  const nombreFinal = vozDatos
+    ? /^(contacto|apagador|enchufe|tomacorriente)\b/i.test(nombreMx)
+      ? productoVenta || "Placa de voz y datos"
+      : nombreMx
+    : nombreMostradorCompuesto({
+        nombre: nombreMx,
+        material: texto(raw.material) || "No determinado",
+        medida: mexicanizarMostrador(texto(raw.medida || raw.medida_detectada) || "No visible"),
+        descripcion: descripcionMx,
+        mecanismo,
+        palabras_clave,
+        producto_venta: productoVenta,
+      });
+  if (!vozDatos && /^apagador\b/i.test(nombreFinal) && !palabras_clave.some((item) => /^apagador$/i.test(item))) {
     palabras_clave.unshift("apagador");
   }
-  if (/^contacto\b/i.test(nombreFinal) && !palabras_clave.some((item) => /^contacto$/i.test(item))) {
+  if (!vozDatos && /^contacto\b/i.test(nombreFinal) && !palabras_clave.some((item) => /^contacto$/i.test(item))) {
     palabras_clave.unshift("contacto");
   }
   return {
     nombre: nombreFinal,
+    producto_venta: productoVenta || nombreFinal,
+    accesorios_visibles: accesoriosVisibles,
     material: texto(raw.material) || "No determinado",
     medida: mexicanizarMostrador(texto(raw.medida || raw.medida_detectada) || "No visible"),
     categoria: categoriaAbierta(raw.categoria),

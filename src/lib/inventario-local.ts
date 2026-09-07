@@ -359,6 +359,7 @@ export type ResultadoBusquedaInventario = {
 
 const SINONIMOS_OBJETO: Record<string, string[]> = {
   placa: ["placa", "embellecedor"],
+  datos: ["placa", "rj45", "rj11", "datos", "jack"],
   apagador: ["apagador", "interruptor"],
   contacto: ["contacto", "tomacorriente", "enchufe"],
   foco: ["foco", "lampara", "luminaria"],
@@ -371,6 +372,14 @@ const SINONIMOS_OBJETO: Record<string, string[]> = {
   valvula: ["valvula"],
 };
 
+const VOZ_DATOS_RE =
+  /\b(rj[\s-]?45|rj[\s-]?11|rj[\s-]?12|ethernet|keystone|voz y datos|voz\/datos|jack de (red|datos|telefono)|conector de (red|datos)|toma de (datos|red|telefono)|informatica)\b/;
+
+/** Placa o jack de voz/datos/red. No es contacto 127 V ni apagador. */
+export function esPiezaVozDatos(texto: string): boolean {
+  return VOZ_DATOS_RE.test(textoPlano(texto));
+}
+
 function textoPlano(texto: string): string {
   return plegarHaystack(texto)
     .replace(/[^a-z0-9]+/g, " ")
@@ -380,12 +389,20 @@ function textoPlano(texto: string): string {
 
 function blobIdentidad(pieza: IdentidadPieza | string): string {
   if (typeof pieza === "string") return pieza;
-  return [pieza.nombre, pieza.medida, pieza.descripcion, pieza.mecanismo, pieza.material, ...(pieza.palabras_clave ?? [])].join(" ");
+  return [
+    pieza.nombre,
+    pieza.producto_venta,
+    pieza.medida,
+    pieza.descripcion,
+    pieza.mecanismo,
+    pieza.material,
+    ...(pieza.palabras_clave ?? []),
+  ].join(" ");
 }
 
 function blobPrincipal(pieza: IdentidadPieza | string): string {
   if (typeof pieza === "string") return pieza;
-  return [pieza.nombre, pieza.medida, pieza.descripcion, pieza.mecanismo, pieza.material].join(" ");
+  return [pieza.nombre, pieza.producto_venta, pieza.medida, pieza.descripcion, pieza.mecanismo, pieza.material].join(" ");
 }
 
 function clavesSueltas(pieza: IdentidadPieza | string): string {
@@ -402,10 +419,11 @@ function sinDestinoDePlaca(t: string): string {
     .trim();
 }
 
-/** Teclas o palancas visibles: la pieza física, no la tapa vacía. */
+/** Teclas o palancas de apagador / orificios de 127 V. Un jack RJ45 no cuenta. */
 function tieneMecanismoElectrico(t: string): boolean {
   if (/\b(termomagnet|pastilla)\b/.test(t)) return false;
-  return /\b(tecla|palancas?|mecanismo)\b/.test(t) || /\b(apagador|interruptor|contacto|tomacorriente)\b/.test(t);
+  if (esPiezaVozDatos(t)) return false;
+  return /\b(tecla|palancas?)\b/.test(t) || /\b(apagador|interruptor)\b/.test(t) || (/\b(contacto|tomacorriente)\b/.test(t) && /\b(duplex|127|clavija|orificios?)\b/.test(t));
 }
 
 function esPlacaVacia(sku: string, nombre: string): boolean {
@@ -432,8 +450,9 @@ function esPiezaCompuestaOInstalada(nombre: string, principal: string, claves = 
   const start = textoPlano(nombre);
   const t = sinDestinoDePlaca(textoPlano(principal));
   const k = textoPlano(claves);
+  if (esPiezaVozDatos(`${nombre} ${principal} ${claves}`)) return false;
   if (/\b(termomagnet|pastilla|timbre)\b/.test(t) && !/\b(apagador|contacto|tecla)\b/.test(t)) return false;
-  if (/^(apagador|interruptor|contacto|kit|juego)\b/.test(start)) return true;
+  if (/^(apagador|interruptor|contacto|kit|juego)\b/.test(start) && !esPiezaVozDatos(start)) return true;
   if (/\b(tecla|palancas?)\b/.test(t) || /\b(tecla|palancas?)\b/.test(k)) return true;
   if (/\bcon\s+(apagador|interruptor|contacto|teclas?|palancas?|mecanismo)/.test(t)) return true;
   if (/\b(apagador|interruptor)\s+(sencillo|doble|triple|escalera)\b/.test(t)) return true;
@@ -453,6 +472,7 @@ export function objetoMostrador(pieza: IdentidadPieza | string): string | null {
   const t = textoPlano(blob);
   const start = textoPlano(nombre);
   if (!t) return null;
+  if (esPiezaVozDatos(t) || esPiezaVozDatos(start)) return "datos";
   if (/\b(termomagnet|pastilla)\b/.test(t) && !/\b(apagador|placa|contacto|tecla)\b/.test(start) && !/\b(tecla|palanca)\b/.test(t)) {
     return "breaker";
   }
@@ -482,8 +502,9 @@ export function objetoMostrador(pieza: IdentidadPieza | string): string | null {
   return null;
 }
 
-/** Si el modelo tituló «Placa de…» pero hay teclas, el nombre de mostrador es el aparato. */
+/** Si el modelo tituló «Placa de…» pero hay teclas de apagador, el nombre de mostrador es el aparato. */
 export function nombreMostradorCompuesto(pieza: IdentidadPieza): string {
+  if (esPiezaVozDatos(blobIdentidad(pieza))) return mexicanizarMostrador(pieza.nombre);
   const objeto = objetoMostrador(pieza);
   const start = textoPlano(pieza.nombre);
   if ((objeto === "apagador" || objeto === "contacto") && /^(placa|tapa|embellecedor)\b/.test(start)) {
@@ -502,11 +523,16 @@ export function tokenSqlObjeto(objeto: string | null): string | null {
   if (objeto === "breaker") return "pastilla";
   if (objeto === "valvula") return "valvula";
   if (objeto === "apagador") return "apagador";
+  if (objeto === "datos") return "placa";
   if (SINONIMOS_OBJETO[objeto]?.[0]) return SINONIMOS_OBJETO[objeto][0];
   return objeto;
 }
 
 function tokensSinAccesorioPlaca(tokens: string[], objeto: string | null): string[] {
+  if (objeto === "datos" || objeto === "placa") {
+    const sinCable = tokens.filter((token) => !["cable", "ethernet", "patch", "latiguillo", "utp"].includes(token));
+    return sinCable.length > 0 ? sinCable : tokens;
+  }
   if (objeto !== "apagador" && objeto !== "contacto") return tokens;
   const filtrados = tokens.filter((token) => !["placa", "tapa", "embellecedor", "marco"].includes(token));
   return filtrados.length > 0 ? filtrados : tokens;
@@ -525,6 +551,12 @@ function itemEsObjeto(nombre: string, objeto: string, sku = ""): boolean {
   if (objeto === "contacto") {
     if (esPlacaVacia(sku, nombre)) return false;
     return /\b(contacto|tomacorriente|enchufe)\b/.test(t) || /^cont[-_]/i.test(sku);
+  }
+  if (objeto === "datos") {
+    if (/\b(cable|thw|thhn|patch|latiguillo)\b/.test(t) && !/\b(placa|jack|rj45|datos)\b/.test(t)) return false;
+    if (/\b(rj45|rj11|keystone|voz y datos|datos|ethernet|jack|informatica)\b/.test(t)) return true;
+    if ((SINONIMOS_OBJETO.placa ?? []).some((s) => t.includes(s)) || /^plac[-_]/i.test(sku)) return true;
+    return false;
   }
   if (objeto === "placa") {
     if (esPiezaCompleta(sku, nombre) && !/^(placa|tapa|embellecedor)\b/.test(t) && !/^plac[-_]/i.test(sku)) return false;
@@ -562,6 +594,11 @@ function puntuarFilaMostrador(
   if (objetoFoto === "apagador" || objetoFoto === "contacto") {
     if (esPlacaVacia(sku, nombre)) score -= 20;
     else if (esPiezaCompleta(sku, nombre)) score += 12;
+  }
+  if (misma && objetoFoto === "datos") {
+    if (/\b(rj45|rj11|keystone|voz y datos|datos|jack|informatica)\b/.test(plano)) score += 10;
+    if (/\b(apagador|contacto|tomacorriente|duplex)\b/.test(plano) && !/\b(datos|rj45|jack)\b/.test(plano)) score -= 12;
+    if (/\b(cable|thw|thhn)\b/.test(plano) && !/\b(placa|jack|rj45)\b/.test(plano)) score -= 16;
   }
   if (misma && objetoFoto === "placa") {
     if (esPiezaCompleta(sku, nombre)) score -= 10;
@@ -633,7 +670,7 @@ export function extraerTerminosIlike(claves: string[]): string[] {
 }
 
 function terminosDesdePieza(pieza: IdentidadPieza): string[] {
-  const claves = (pieza.palabras_clave ?? []).filter(Boolean);
+  const claves = [...(pieza.palabras_clave ?? []), pieza.producto_venta ?? ""].filter(Boolean);
   if (claves.length > 0) return extraerTerminosIlike(claves);
   const extra = [pieza.material, pieza.medida].filter(
     (item) => item && !/^no\s/i.test(item.trim()) && !/^n\/a$/i.test(item.trim())

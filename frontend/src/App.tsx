@@ -25,6 +25,8 @@ import {
 
 type PiezaDetectada = {
   nombre: string;
+  producto_venta?: string;
+  accesorios_visibles?: string;
   material: string;
   medida: string;
   categoria: string;
@@ -135,6 +137,9 @@ function filasFichaTecnica(pieza: PiezaDetectada, stock: BloqueStock): { etiquet
     if (texto) filas.push({ etiqueta, valor: texto });
   };
   add('Categoría', pieza.categoria);
+  if (pieza.producto_venta && pieza.producto_venta.toLowerCase() !== pieza.nombre.trim().toLowerCase()) {
+    add('Buscar en anaquel', pieza.producto_venta);
+  }
   add('Material', pieza.material || stock.material);
   add('Medida', pieza.medida || stock.medida);
   add('Mecanismo', pieza.mecanismo);

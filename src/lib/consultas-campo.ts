@@ -129,6 +129,8 @@ function mensajeGuiaInicial(pieza: PiezaDetectada, stock: BloqueStock): string {
 function piezaSinBinarios(pieza: PiezaDetectada): Record<string, unknown> {
   return {
     nombre: pieza.nombre,
+    producto_venta: pieza.producto_venta,
+    accesorios_visibles: pieza.accesorios_visibles,
     material: pieza.material,
     medida: pieza.medida,
     categoria: pieza.categoria,

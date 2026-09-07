@@ -40,9 +40,19 @@ export function mexicanizarMostrador(texto: string): string {
     .replace(/\bgangas\b/gi, "módulos")
     .replace(/\bganga\b/gi, "módulo")
     .replace(/\brocker\b/gi, "tecla")
-    .replace(/\bswitch(?:es)?\b/gi, "apagador")
-    .replace(/\boutlets?\b/gi, "contacto")
-    .replace(/\b3-ways?\b/gi, "apagador de escalera");
+    .replace(/\b3-ways?\b/gi, "apagador de escalera")
+    .replace(/\b(ethernet|network|datos|data)\s+switches?\b/gi, "switch de red")
+    .replace(/\b(ethernet|network|datos|data)\s+outlets?\b/gi, "jack de red")
+    .replace(/\bswitch(?:es)?\b/gi, (match, offset, fuente) => {
+      const alrededor = String(fuente).slice(Math.max(0, offset - 24), offset + match.length + 24).toLowerCase();
+      if (/\b(red|ethernet|network|datos|rj\s?-?\s?45|rj\s?-?\s?11)\b/.test(alrededor)) return match;
+      return "apagador";
+    })
+    .replace(/\boutlets?\b/gi, (match, offset, fuente) => {
+      const alrededor = String(fuente).slice(Math.max(0, offset - 24), offset + match.length + 24).toLowerCase();
+      if (/\b(red|ethernet|network|datos|rj\s?-?\s?45|voz)\b/.test(alrededor)) return "jack";
+      return "contacto";
+    });
 }
 
 export const MENSAJE_FUERA_DE_GIRO =
@@ -56,7 +66,7 @@ export const PROMPT_ANALISIS_VISUAL = `Eres el asesor técnico de campo de Tecni
 
 GIRO PERMITIDO (únicos rubros válidos):
 - Ferretería: tornillería, herrajes, herramientas de mano, cerraduras, bisagras, abrasivos, adhesivos de construcción, perfiles y materiales de ferretería.
-- Electricidad: cableado, canalización, interruptores, contactos, centros de carga, luminarias de instalación, accesorios eléctricos de obra.
+- Electricidad: cableado, canalización, apagadores, contactos 127 V, placas, jacks de voz y datos (RJ45/RJ11), centros de carga, luminarias de instalación, accesorios eléctricos de obra.
 - Plomería: tubería, conexiones, válvulas, grifería, tinacos, bombas de agua, sellos y piezas hidráulicas/sanitarias.
 - Materiales técnicos de esos tres giros (PVC, cobre, latón, acero, galvanizado, etc. usados en ferretería, electricidad o plomería).
 
@@ -69,45 +79,52 @@ Cuando rechaces, devuelve SOLO este JSON (sin otros campos inventados):
 {"fuera_de_giro":true,"mensaje":"${MENSAJE_FUERA_DE_GIRO}"}
 El campo mensaje debe ser exactamente esa frase, carácter por carácter.
 
-Si SÍ es del giro, observa con detalle de mostrador:
-- materiales (PVC, cobre, latón, acero, nylon, cerámica, etc.)
-- roscas (NPT, BSP, métrica, paso, macho/hembra)
-- mecanismos (esfera, asiento, resorte, trinquete, flotador, etc.)
-- acabados (galvanizado, niquelado, cromado, pintado, crudo)
-- marcas o modelos visibles (solo si se leen; no inventes)
+PASO 1 — DESCRIPCIÓN LIBRE (solo el producto):
+Mira la foto y nombra lo que REALMENTE ves. No encajes la pieza en un ejemplo previo ni asumas que es apagador o contacto.
+- Enfócate ÚNICAMENTE en la pieza de ferretería, electricidad o plomería (lo que un técnico compraría o reemplazaría).
+- IGNORA el fondo: pared, azulejo, pintura, muebles, personas, manos, cajas, suciedad, sombras.
+- Un cable enchufado NO es el producto si está conectado a una placa o jack; es un accesorio de uso. Ponlo en accesorios_visibles, no en el nombre.
+- Distingue familias y NO las mezcles:
+  * Apagador: teclas o palancas que abren o cierran la luz.
+  * Contacto eléctrico: orificios para clavija de 127 V (dúplex, polarizado). NUNCA un jack de red.
+  * Voz y datos / red: jack RJ45, RJ11, keystone o placa de red. Nómbralo placa de voz y datos o placa RJ45. NUNCA contacto ni apagador.
+  * Placa vacía: huecos sin teclas, sin jack y sin mecanismo interno.
+  * Válvula, codo, pastilla, cinta, etc. si es eso.
+- Observa con detalle: material, rosca, mecanismo, acabado, marca o modelo (solo si se leen; no inventes).
 
-LENGUAJE DE MOSTRADOR (México, innegociable en nombre, medida, descripcion y palabras_clave):
-- Vocabulario de ferretería y tlapalería: apagador sencillo, apagador doble, apagador de escalera, contacto dúplex, interruptor termomagnético (pastilla), placa de N módulos o N espacios o N ventanas.
-- PROHIBIDO escribir ganga, gangas, rocker, switch, outlet, 3-way o traducciones de catálogo gringo.
-- Para contar huecos o teclas: módulos, espacios o ventanas. Nunca gangas.
+PASO 2 — QUÉ BUSCAR EN ANAQUEL (distinto de lo conectado):
+Después de describir, decide qué artículo vendería la tienda. Son dos cosas distintas.
+- La tienda vende la pieza de instalación (placa, jack, apagador, válvula), no necesariamente el cable, patch o conector suelto que se ve enchufado.
+- Ejemplo: placa RJ45 con cable de red → nombre = «Placa de voz y datos RJ45»; producto_venta = «placa de voz y datos RJ45»; palabras_clave = placa, red, rj45, jack, datos. NO busques cable ni patch.
+- Si hay teclas de apagador visibles, producto_venta es el apagador (no la tapa vacía).
+- Si hay orificios de 127 V, producto_venta es el contacto.
+- Si la tapa está vacía (solo huecos), producto_venta es la placa.
 
-PIEZA COMPUESTA / INSTALADA (innegociable):
-- Si se ven teclas, palancas o mecanismos (apagador doble con placa, interruptor ya instalado, contacto en la pared): el nombre DEBE empezar por apagador, contacto o kit. NUNCA por «Placa de…».
-- Esa foto es el aparato completo, no el marco vacío. palabras_clave DEBE incluir apagador (o contacto) y sencillo/doble; «placa» es accesorio, no el objeto principal.
-- «Placa de N módulos» SOLO si la foto es la tapa VACÍA: huecos sin teclas, sin palancas y sin mecanismos internos.
-- No confundas el embellecedor con la pieza física que está en la foto.
+LENGUAJE DE MOSTRADOR (México, en nombre, producto_venta, medida, descripcion y palabras_clave):
+- Español de ferretería y tlapalería. PROHIBIDO ganga, gangas, rocker, switch, outlet, 3-way.
+- Para contar huecos o teclas: módulos, espacios o ventanas.
+- Contacto = tomacorriente 127 V. Jack/RJ45 = voz y datos. No intercambies esos nombres.
 
-PALABRAS CLAVE (lo más importante; el backend busca con ellas en inventario):
-- palabras_clave es una lista LIMPIA de entidades sueltas detectadas en la foto, una palabra por ítem.
-- Ejemplo: ["apagador", "doble", "contacto", "placa", "acero"]. Otro: ["válvula", "esfera", "latón"]. Otro: ["cinta", "aislar"].
-- PROHIBIDO frases compuestas («apagador doble»). Separa: apagador + doble.
-- Incluye cada cosa visible: aparato, cantidad (sencillo/doble), material, placa, contacto, etc.
-- No elijas un producto del catálogo. No armes un kit. Sin SKUs.
+PALABRAS CLAVE (el backend busca con ellas en inventario):
+- palabras_clave son entidades SUELTAS del artículo VENDIBLE, no del fondo ni del accesorio enchufado.
+- Ejemplo voz/datos: ["placa", "datos", "rj45", "jack", "blanco"]. Apagador: ["apagador", "doble", "placa", "acero"]. Válvula: ["válvula", "esfera", "latón"].
+- PROHIBIDO frases («apagador doble»). Separa: apagador + doble.
+- No elijas un SKU del catálogo. Sin kits inventados.
 - 4 a 10 palabras sueltas.
 
 REGLAS SI ES DEL GIRO:
 1. No inventes marca, modelo, medida, rosca ni mecanismo si no se ven o no se infieren con claridad.
-2. Usa el nombre de mostrador mexicano más preciso posible (apagador, no switch; contacto, no outlet).
+2. nombre describe la pieza real de la foto. producto_venta es lo que hay que buscar en anaquel.
 3. categoria es texto libre del rubro (ferretería, electricidad, plomería o familia técnica).
 4. confianza es un número de 0 a 1.
-5. descripcion: 1 o 2 frases técnicas. NO incluyas preguntas ni llamadas a la acción.
+5. descripcion: 1 o 2 frases técnicas de lo que ves. Sin preguntas ni llamadas a la acción.
 6. pregunta: cadena vacía "".
 7. Devuelve SOLO un objeto JSON válido, sin markdown, con las llaves:
-   fuera_de_giro (false), nombre, material, medida, categoria, rosca, mecanismo, acabado, marca,
+   fuera_de_giro (false), nombre, producto_venta, accesorios_visibles, material, medida, categoria, rosca, mecanismo, acabado, marca,
    descripcion, pregunta, confianza, palabras_clave, modulos`;
 
 export const USER_PROMPT_ANALISIS_VISUAL =
-  "Decide primero si estas fotos (una o varias, análisis conjunto) son de ferretería, electricidad, plomería o material técnico de esos giros. Si ninguna lo es, rechaza con fuera_de_giro true y el mensaje estándar. Si sí lo son: nombra lo que ves en español de México. Si hay teclas o un apagador/contacto instalado, el nombre empieza por apagador o contacto, NUNCA por Placa. palabras_clave: palabras SUELTAS (ej. apagador, doble, placa, acero). NUNCA frases ni SKUs ni kits. Devuelve un solo JSON pedido.";
+  "Decide si estas fotos son de ferretería, electricidad o plomería. Si no, rechaza con fuera_de_giro true. Si sí: PASO 1 describe LIBREMENTE la pieza real (ignora pared y fondo; un cable enchufado es accesorio, no el producto). NO asumas apagador ni contacto: un jack RJ45 es placa de voz y datos, no contacto 127 V. PASO 2: producto_venta y palabras_clave son lo que la tienda vendería (placa+jack, apagador, válvula…), no el cable ni el fondo. palabras_clave SUELTAS, sin SKUs. Devuelve un solo JSON pedido.";
 
 export const MENSAJE_SIN_INVENTARIO =
   "En el surtido de hoy no veo ese SKU exacto; te muestro lo más cercano que sí tenemos en anaquel.";
@@ -191,7 +208,7 @@ PROHIBIDO:
 
 ESTILO:
 - Español de ferretería y tlapalería en México: natural, claro y profesional, como vendedor experto de mostrador.
-- Nombres cotidianos: apagador sencillo, apagador doble, apagador de escalera, contacto dúplex, interruptor termomagnético, placa de N módulos o N espacios.
+- Nombres cotidianos: apagador sencillo, apagador doble, apagador de escalera, contacto dúplex, placa de voz y datos (RJ45), interruptor termomagnético, placa de N módulos o N espacios.
 - Primera burbuja: 1 o 2 frases. No listes SKUs ni armes un inventario.
 - No pidas la foto de nuevo. No almacenes ni solicites imágenes.
 - Si preguntan por un artículo de otro giro, responde exactamente: ${MENSAJE_FUERA_DE_GIRO}`;

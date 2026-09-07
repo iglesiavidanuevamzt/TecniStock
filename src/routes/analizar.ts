@@ -151,6 +151,8 @@ analizarRoutes.post("/", async (c) => {
 
 function piezaPublica(pieza: {
   nombre: string;
+  producto_venta?: string;
+  accesorios_visibles?: string;
   material: string;
   medida: string;
   categoria: string;
@@ -166,6 +168,8 @@ function piezaPublica(pieza: {
 }) {
   return {
     nombre: pieza.nombre,
+    producto_venta: pieza.producto_venta || pieza.nombre,
+    accesorios_visibles: pieza.accesorios_visibles || "",
     material: pieza.material,
     medida: pieza.medida,
     categoria: pieza.categoria,

@@ -339,6 +339,8 @@ function extraerImagenesFotoHilo(body: {
 function piezaPublicaCampo(pieza: PiezaDetectada) {
   return {
     nombre: pieza.nombre,
+    producto_venta: pieza.producto_venta,
+    accesorios_visibles: pieza.accesorios_visibles,
     material: pieza.material,
     medida: pieza.medida,
     categoria: pieza.categoria,
@@ -364,6 +366,7 @@ function identidadDesdeConsulta(consulta: ConsultaCampo): IdentidadPieza {
     categoria: String(pieza.categoria ?? consulta.pieza_categoria ?? ""),
     descripcion: String(pieza.descripcion ?? pieza.observaciones ?? ""),
     mecanismo: String(pieza.mecanismo ?? ""),
+    producto_venta: String(pieza.producto_venta ?? ""),
     palabras_clave: Array.isArray(claves) ? claves.map((item) => String(item)).filter(Boolean) : [],
   };
 }

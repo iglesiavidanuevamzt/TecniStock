@@ -70,6 +70,7 @@ export type IdentidadPieza = {
   palabras_clave?: string[];
   descripcion?: string;
   mecanismo?: string;
+  producto_venta?: string;
 };
 
 type Catalogo = {
@@ -103,7 +104,14 @@ function tokens(texto: string): string[] {
 }
 
 function textoBusqueda(pieza: IdentidadPieza, incluirMaterial: boolean): string {
-  return [pieza.nombre, incluirMaterial ? pieza.material : "", pieza.medida, pieza.categoria, ...(pieza.palabras_clave ?? [])]
+  return [
+    pieza.producto_venta,
+    pieza.nombre,
+    incluirMaterial ? pieza.material : "",
+    pieza.medida,
+    pieza.categoria,
+    ...(pieza.palabras_clave ?? []),
+  ]
     .filter(Boolean)
     .join(" ");
 }
@@ -115,6 +123,7 @@ function textoCatalogo(item: StockItem): string {
 const FAMILIAS: { id: string; claves: string[] }[] = [
   { id: "timbre", claves: ["timbre"] },
   { id: "breaker", claves: ["termomagnet", "pastilla", "breaker", "termomagnetico"] },
+  { id: "datos", claves: ["rj45", "rj11", "rj12", "ethernet", "keystone", "voz y datos", "jack de red"] },
   { id: "interruptor", claves: ["interruptor", "apagador", "switch", "conmutador", "conmutar"] },
   { id: "placa", claves: ["placa", "embellecedor"] },
   { id: "contacto", claves: ["contacto", "tomacorriente", "duplex", "duplez", "receptaculo"] },
@@ -173,6 +182,7 @@ export function cantidadStock(stock: Pick<BloqueStock, "stock_disponible" | "exi
 
 export function familiaCatalogo(texto: string): string | null {
   const t = normalizar(texto);
+  if (FAMILIAS.find((f) => f.id === "datos")?.claves.some((clave) => t.includes(clave))) return "datos";
   if (/^(placa|tapa|embellecedor)\b/.test(t) || /\bplaca para\b/.test(t)) return "placa";
   for (const familia of FAMILIAS) {
     if (familia.claves.some((clave) => t.includes(clave))) return familia.id;
@@ -184,6 +194,7 @@ export function textoIdentidadPieza(consulta: IdentidadPieza): string {
   return normalizar(
     [
       consulta.nombre,
+      consulta.producto_venta,
       consulta.medida,
       consulta.categoria,
       consulta.mecanismo,
@@ -203,8 +214,8 @@ export function esComboApagadorContacto(consulta: IdentidadPieza): boolean {
 
 export function pideParedElectrica(consulta: IdentidadPieza): boolean {
   const t = textoIdentidadPieza(consulta);
-  if (/\btimbre\b/.test(t) && !/\b(apagador|interruptor|contacto|placa)\b/.test(t)) return false;
-  return /\b(apagador|interruptor|contacto|placa|tecla)\b/.test(t);
+  if (/\btimbre\b/.test(t) && !/\b(apagador|interruptor|contacto|placa|rj45|datos)\b/.test(t)) return false;
+  return /\b(apagador|interruptor|contacto|placa|tecla|rj45|rj11|keystone|voz y datos)\b/.test(t);
 }
 
 function mismasFamilias(consulta: IdentidadPieza, item: StockItem): boolean {
@@ -212,7 +223,11 @@ function mismasFamilias(consulta: IdentidadPieza, item: StockItem): boolean {
   if (esComboApagadorContacto(consulta)) {
     return familiaItem === "interruptor" || familiaItem === "contacto" || familiaItem === "placa";
   }
-  const familiaQuery = familiaCatalogo([consulta.nombre, consulta.medida, ...(consulta.palabras_clave ?? [])].join(" "));
+  const familiaQuery = familiaCatalogo(
+    [consulta.nombre, consulta.producto_venta, consulta.medida, ...(consulta.palabras_clave ?? [])].join(" ")
+  );
+  if (familiaQuery === "datos" && (familiaItem === "placa" || familiaItem === "datos")) return true;
+  if (familiaQuery === "placa" && familiaItem === "datos") return true;
   if (familiaQuery && familiaItem) return familiaQuery === familiaItem;
   if (familiaQuery && !familiaItem) return false;
   return true;
@@ -225,7 +240,7 @@ export function poolParedElectrica(consulta: IdentidadPieza, piezas: StockItem[]
     const n = normalizar(`${item.nombre} ${item.sku} ${item.descripcion_tecnica ?? ""}`);
     if (/\btimbre\b/.test(n) || /\bint[-_]?tim\b/.test(n)) return false;
     if (/\b(termomagnet|pastilla|cable|cinta|foco|lampara|conduit|cople|clavija|calibre)\b/.test(n)) return false;
-    return /\b(interruptor|apagador|contacto|placa)\b/.test(n);
+    return /\b(interruptor|apagador|contacto|placa|rj45|rj11|keystone|datos)\b/.test(n);
   });
 }
 
@@ -314,7 +329,7 @@ function categoriaAlineada(consulta: IdentidadPieza, item: StockItem): boolean {
   const c = normalizar(item.categoria);
   if (q && (c === q || c.includes(q) || q.includes(c))) return true;
   const blob = `${n} ${q}`;
-  if (c === "electricidad" && /electric|interruptor|apagador|contacto|cable|breaker|termomagnet/.test(blob)) return true;
+  if (c === "electricidad" && /electric|interruptor|apagador|contacto|placa|rj45|datos|cable|breaker|termomagnet/.test(blob)) return true;
   if (c === "plomeria" && /plom|pvc|cpvc|valvula|codo|tubo|llave|esfera/.test(blob)) return true;
   if (c === "ferreteria" && /tornillo|tuerca|taquete|broca|herraje|clavo/.test(blob)) return true;
   return false;
